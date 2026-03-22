@@ -1,6 +1,8 @@
 import User from "../models/User.model.js"
 import {config} from "../configs/env.js"
 import jwt from "jsonwebtoken"
+import SessionModel from "../models/Session.model.js"
+import crypto from "crypto"
 export const createUserService =async ({userName,email,password}) =>{
  try{
   const user = await User.findOne({
@@ -38,21 +40,16 @@ export const loginService = async ({email,password}) =>
    throw new Error("Incorrect password!")
   }
   
-  const accessToken = jwt.sign(
-   {id:user._id},
-   config.JWT_SECRET,
-   {expiresIn:"15m"}
-   )
-   
-   const refreshToken = jwt.sign(
+     const refreshToken = jwt.sign(
     {id:user._id},
     config.JWT_SECRET,
     {expiresIn:"7d"}
     )
-    
+
+    const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
     
    return{
-    email:user.email,accessToken,refreshToken
+    _id:user._id,refreshToken,refreshTokenHash,email:user.email
    }
  }catch(err){
   throw(err)
@@ -108,3 +105,5 @@ export const refreshTokenService =async ({refreshToken}) =>{
   throw (err)
  }
 }
+
+

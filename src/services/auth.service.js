@@ -3,6 +3,7 @@ import {config} from "../configs/env.js"
 import jwt from "jsonwebtoken"
 import SessionModel from "../models/Session.model.js"
 import crypto from "crypto"
+
 export const createUserService =async ({userName,email,password}) =>{
  try{
   const user = await User.findOne({
@@ -10,7 +11,9 @@ export const createUserService =async ({userName,email,password}) =>{
   })
   
   if(user){
-   throw new Error("User already exists")
+   const err = new Error("User already exists")
+   err.statusCode = 401
+   throw err
   }
   
   const newUser = await User.create({
@@ -25,37 +28,24 @@ export const createUserService =async ({userName,email,password}) =>{
  }
 }
 
-export const loginService = async ({email,password}) =>
-{
- try{
+export const loginService = async ({email, password}) => {
   const user = await User.findOne({email}).select("+password")
-  
-  if (!user){
-   throw new Error("User not found, please sign up")
+
+  if (!user) {
+    const err = new Error("User not found, please sign up")
+    err.statusCode = 404
+    throw err
   }
-  
+
   const match = await user.comparePassword(password)
-  
-  if(!match){
-   throw new Error("Incorrect password!")
+  if (!match) {
+    const err = new Error("Incorrect password!")
+    err.statusCode = 401
+    throw err
   }
-  
-     const refreshToken = jwt.sign(
-    {id:user._id},
-    config.JWT_SECRET,
-    {expiresIn:"7d"}
-    )
 
-    const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
-    
-   return{
-    _id:user._id,refreshToken,refreshTokenHash,email:user.email
-   }
- }catch(err){
-  throw(err)
- }
+  return user  
 }
-
 
 export const getMeService = async ({userId
 }) =>{
@@ -65,7 +55,9 @@ export const getMeService = async ({userId
   })
   
   if(!user){
-   throw new Error("User not found")
+   const err = new Error("User not found")
+   err.statusCode = 404
+   throw err
   }
   
   return user
@@ -79,11 +71,23 @@ export const getMeService = async ({userId
 export const refreshTokenService =async ({refreshToken}) =>{
  try{
  if(!refreshToken){
-   throw new Error("Refresh token not found")
+   const err = new Error("Refresh token not found")
+   err.statusCode = 401
+  throw err
   }
   
   const decode = jwt.verify(refreshToken,config.JWT_SECRET)
-  
+  const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
+  const session = await SessionModel.findOne({
+    refreshTokenHash:refreshTokenHash,
+    revoked:false
+  })
+
+  if(!session){
+    const err = new Error("Refresh token not found")
+    err.statusCode = 404
+    throw err
+  }
   const accessToken = jwt.sign(
    {id:decode.id},
    config.JWT_SECRET,
@@ -96,6 +100,10 @@ export const refreshTokenService =async ({refreshToken}) =>{
     {expiresIn:"7d"}
     )
     
+    const newRefreshTokenHash = crypto.createHash("sha256").update(newRefreshToken).digest("hex")
+    session.refreshTokenHash = newRefreshTokenHash
+
+    await session.save()
     
    return {
     accessToken,
@@ -107,3 +115,32 @@ export const refreshTokenService =async ({refreshToken}) =>{
 }
 
 
+export const logoutService = async (refreshToken) =>{
+  try{
+    if (!refreshToken){
+      const err = new Error("refresh token not found")
+      err.statusCode = 404
+      throw err
+    }
+
+    const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
+
+    const session = await SessionModel.findOne({
+      refreshTokenHash:refreshTokenHash,
+      revoked:false
+    })
+
+    if(!session){
+      const err = new Error("Session not found")
+      err.statusCode = 404
+      throw err
+    }
+
+    session.revoked = true
+    await session.save()
+
+    return true;
+  }catch(err){
+    throw(err)
+  }
+}

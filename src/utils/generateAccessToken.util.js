@@ -1,4 +1,4 @@
-import { config } from "dotenv"
+import { config } from "../configs/env.js"
 import jwt from "jsonwebtoken"
 export const generateAccessToken = async ({userId,sessionId})=>{
     try{

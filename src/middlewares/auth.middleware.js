@@ -1,6 +1,7 @@
 import {config} from "../configs/env.js"
 import jwt from "jsonwebtoken"
 import User from "../models/User.model.js"
+import BlackListTokenModel from "../models/BlackListToken.model.js"
 export const authMiddleware =async (req,res,next) =>{
  
  try{
@@ -12,7 +13,16 @@ export const authMiddleware =async (req,res,next) =>{
     message:"Token not found"
    })
   }
-  
+
+  const blackList = await BlackListTokenModel.findOne({
+    token:token
+  })
+  if(blackList){
+    return res.status(403).json({
+        success:false,
+        message:"Access token is black listed"
+    })
+  }
   const verify = jwt.verify(token,config.JWT_SECRET)
   
   const user = await User.findById(verify.id)

@@ -3,6 +3,9 @@ import {config} from "../configs/env.js"
 import jwt from "jsonwebtoken"
 import SessionModel from "../models/Session.model.js"
 import crypto from "crypto"
+import UserModel from "../models/User.model.js"
+import { startSession } from "mongoose"
+import BlackListTokenModel from "../models/BlackListToken.model.js"
 
 export const createUserService =async ({userName,email,password}) =>{
  try{
@@ -29,6 +32,7 @@ export const createUserService =async ({userName,email,password}) =>{
 }
 
 export const loginService = async ({email, password}) => {
+  try{
   const user = await User.findOne({email}).select("+password")
 
   if (!user) {
@@ -45,7 +49,11 @@ export const loginService = async ({email, password}) => {
   }
 
   return user  
+}catch(err){
+  throw err
 }
+}
+
 
 export const getMeService = async ({userId
 }) =>{
@@ -68,54 +76,37 @@ export const getMeService = async ({userId
 }
 
 
-export const refreshTokenService =async ({refreshToken}) =>{
- try{
- if(!refreshToken){
-   const err = new Error("Refresh token not found")
-   err.statusCode = 401
-  throw err
-  }
-  
-  const decode = jwt.verify(refreshToken,config.JWT_SECRET)
-  const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
-  const session = await SessionModel.findOne({
-    refreshTokenHash:refreshTokenHash,
-    revoked:false
-  })
+export const refreshTokenService = async ({refreshToken}) =>{
+  try{
+    if(!refreshToken){
+      const err = new Error("Refresh token not found")
+      err.statusCode = 404
+      throw err
+    }
+    const decode =  jwt.verify(refreshToken,config.JWT_SECRET)
+    const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
 
-  if(!session){
-    const err = new Error("Refresh token not found")
-    err.statusCode = 404
+    const session = await SessionModel.findOne({
+      refreshTokenHash,
+      revoked:false
+    })
+
+    if (!session){
+      const err = new Error("session not found")
+      err.statusCode = 404
+      throw err
+    }
+    return{
+      userId:decode.id,
+      session
+    }
+  }catch(err){
     throw err
   }
-  const accessToken = jwt.sign(
-   {id:decode.id},
-   config.JWT_SECRET,
-   {expiresIn:"15m"}
-   )
-   
-   const newRefreshToken = jwt.sign(
-    {id:decode.id},
-    config.JWT_SECRET,
-    {expiresIn:"7d"}
-    )
-    
-    const newRefreshTokenHash = crypto.createHash("sha256").update(newRefreshToken).digest("hex")
-    session.refreshTokenHash = newRefreshTokenHash
-
-    await session.save()
-    
-   return {
-    accessToken,
-    newRefreshToken
-   }
- }catch(err){
-  throw (err)
- }
 }
 
 
-export const logoutService = async (refreshToken) =>{
+export const logoutService = async ({refreshToken,accessToken}) =>{
   try{
     if (!refreshToken){
       const err = new Error("refresh token not found")
@@ -123,6 +114,11 @@ export const logoutService = async (refreshToken) =>{
       throw err
     }
 
+    if(!accessToken){
+      const err = new Error("Access token not found")
+      err.statusCode = 404
+      throw err
+    }
     const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
 
     const session = await SessionModel.findOne({
@@ -139,8 +135,44 @@ export const logoutService = async (refreshToken) =>{
     session.revoked = true
     await session.save()
 
+    await BlackListTokenModel.create({
+      token:accessToken
+    })
+
     return true;
   }catch(err){
     throw(err)
+  }
+}
+
+
+export const logoutAllService = async ({refreshToken,accessToken}) =>{
+  try{
+    if (!refreshToken){
+      const err = new Error("Refresh token not found")
+      err.statusCode = 404
+      throw err
+    }
+
+    if(!accessToken){
+      const err = new Error("Access token not found")
+      err.statusCode = 404
+      throw err
+    }
+    const decoded = jwt.verify(refreshToken,config.JWT_SECRET)
+
+    await SessionModel.updateMany({
+      user:decoded.id,
+      revoked:false
+    },{
+      revoked:true
+    })
+
+    await BlackListTokenModel.create({
+      token:accessToken
+    })
+    return true
+  }catch(err){
+    throw err
   }
 }

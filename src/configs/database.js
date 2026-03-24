@@ -11,5 +11,6 @@ export const connectDB = () =>{
   console.log("database connected successfully!")
  }catch(err){
   console.log("Failed to connect to database",err)
+  setTimeout(connectDB, 5000)
  }
 }
